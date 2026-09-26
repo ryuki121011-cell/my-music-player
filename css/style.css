@@ -376,3 +376,5 @@ html, body {
 
 /* プレイリスト内の曲の並べ替え中の行 */
 .edit-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); height: 63px; box-sizing: border-box; }
+
+.sort-select { width: 100%; padding: 10px 12px; border: 0; border-radius: 10px; background: var(--surface2); color: var(--text); font-size: 15px; }

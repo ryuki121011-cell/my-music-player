@@ -202,11 +202,13 @@ function bindUIEvents() {
   document.getElementById('btn-back-playlists').addEventListener('click', () => showView('view-playlists'));
   document.getElementById('btn-playlist-add').addEventListener('click', openAddSongs);
   document.getElementById('btn-playlist-reorder').addEventListener('click', toggleSongEditMode);
+  document.getElementById('song-sort-select').addEventListener('change', (e) => sortPlaylistSongs(e.target.value));
   document.getElementById('playlist-detail-list').addEventListener('pointerdown', (e) => {
     const handle = e.target.closest('.drag-handle');
     const li = handle && handle.closest('.edit-row');
     if (!li) return;
     startRowDrag({ preventDefault: () => e.preventDefault(), currentTarget: handle, pointerId: e.pointerId, clientY: e.clientY }, li, li.parentElement, async (rows) => {
+      document.getElementById('song-sort-select').value = '';
       const pl = playlists.find(p => p.id === currentPlaylistId);
       if (!pl) return;
       const shown = rows.map(r => Number(r.dataset.trackId));
@@ -1625,12 +1627,30 @@ function renderSongEditList() {
     `<div class="track-meta"><div class="track-title">${esc(t.title)}</div><div class="track-artist">${esc(t.artist)}</div></div>` +
     `<div class="drag-handle">≡</div></li>`).join('');
 }
+// 並び順のプルダウン(タイトル順・アーティスト順 × 昇順・降順)。選ぶと、その順に並べ替えて保存する。ボタンではなくプルダウンにして、誤タップを防ぐ
+async function sortPlaylistSongs(value) {
+  const pl = playlists.find(p => p.id === currentPlaylistId);
+  if (!pl || !value) return;
+  const [key, d] = value.split(':');
+  const dir = d === 'desc' ? -1 : 1;
+  const artistKey = (t) => t.artistSort || t.artist || '';
+  const cmp = key === 'artist'
+    ? (a, b) => sectionSort(artistKey(a), artistKey(b)) || sectionSort(trackSortKey(a), trackSortKey(b))
+    : (a, b) => sectionSort(trackSortKey(a), trackSortKey(b));
+  const list = pl.trackIds.map(id => tracks.find(t => t.id === id)).filter(Boolean).sort((a, b) => dir * cmp(a, b));
+  const missing = pl.trackIds.filter(id => !list.some(t => t.id === id));
+  pl.trackIds = [...list.map(t => t.id), ...missing];
+  await DB.updatePlaylist(pl);
+  renderSongEditList();
+}
+
 function toggleSongEditMode() {
   const btn = document.getElementById('btn-playlist-reorder');
   songEditMode = !songEditMode;
   btn.textContent = songEditMode ? '完了' : '並び替え';
   document.getElementById('btn-playlist-add').classList.toggle('hidden', songEditMode);
-  if (songEditMode) renderSongEditList();
+  document.getElementById('song-sort-bar').classList.toggle('hidden', !songEditMode);
+  if (songEditMode) { document.getElementById('song-sort-select').value = ''; renderSongEditList(); }
   else openPlaylistDetail(currentPlaylistId); // 通常の一覧(先頭の再生ボタン付き)に戻す
 }
 
@@ -1664,7 +1684,7 @@ function openPlaylistDetail(playlistId) {
   document.getElementById('playlist-detail-title').textContent = pl.name;
   document.getElementById('btn-playlist-add').classList.toggle('hidden', typeof playlistId !== 'number'); // 曲を足せるのは自分のプレイリストだけ
   document.getElementById('btn-playlist-reorder').classList.toggle('hidden', typeof playlistId !== 'number');
-  if (songEditMode) { songEditMode = false; document.getElementById('btn-playlist-reorder').textContent = '並び替え'; } // 別のプレイリストを開いたら、並び替えは終わり
+  if (songEditMode) { songEditMode = false; document.getElementById('btn-playlist-reorder').textContent = '並び替え'; document.getElementById('song-sort-bar').classList.add('hidden'); } // 別のプレイリストを開いたら、並び替えは終わり
   const listEl = document.getElementById('playlist-detail-list');
   fillTrackList(listEl, plTracks, plTracks.map(t => t.id));
   showView('view-playlist-detail');

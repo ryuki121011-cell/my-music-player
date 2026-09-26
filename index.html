@@ -58,6 +58,15 @@
       <button id="btn-playlist-reorder" class="icon-btn year-sort-btn hidden">並び替え</button>
       <button id="btn-playlist-add" class="icon-btn hidden" title="曲を追加">＋</button>
     </header>
+    <div id="song-sort-bar" class="search-bar hidden">
+      <select id="song-sort-select" class="sort-select">
+        <option value="">並び順を選ぶ(手動)</option>
+        <option value="title:asc">タイトル順(昇順)</option>
+        <option value="title:desc">タイトル順(降順)</option>
+        <option value="artist:asc">アーティスト順(昇順)</option>
+        <option value="artist:desc">アーティスト順(降順)</option>
+      </select>
+    </div>
     <ul id="playlist-detail-list" class="track-list"></ul>
   </section>
 
