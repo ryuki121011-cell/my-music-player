@@ -1427,7 +1427,8 @@ const SEASONS = [
   { key: 'spring', label: '春', re: /春|桜|さくら|サクラ|卒業|入学|花見|菜の花|新生活|桃の花|spring|sakura|cherry\s?blossom/gi },
   { key: 'summer', label: '夏', re: /夏|花火|向日葵|ひまわり|入道雲|夕立|浴衣|蝉|海|サマー|summer|真夏|南国|プール|夏祭/gi },
   { key: 'autumn', label: '秋', re: /秋|紅葉|コスモス|落ち葉|枯葉|月見|十五夜|銀杏|autumn|fall\b|ハロウィン|halloween/gi },
-  { key: 'winter', label: '冬', re: /冬|雪|クリスマス|christmas|x'?mas|winter|snow|粉雪|吹雪|聖夜|白い息|こたつ|ホワイトクリスマス/gi },
+  { key: 'winter', label: '冬', re: /冬|雪|winter|snow|粉雪|吹雪|白い息|こたつ/gi },
+  { key: 'xmas', label: 'クリスマス', re: /クリスマス|christmas|x'?mas|聖夜|サンタ|ジングルベル|ノエル|noel/gi }, // 冬とは別の一覧(クリスマスの曲は冬に入れない)
 ];
 function countMatches(text, re) {
   const m = text.match(re);
@@ -1438,6 +1439,8 @@ function autoSeason(track) {
   const head = `${track.title || ''} ${track.album || ''}`.normalize('NFKC').replace(/秋桜/g, '秋');
   const scoreOf = (text) => SEASONS.map(d => ({ key: d.key, n: countMatches(text, d.re) })).sort((a, b) => b.n - a.n);
   let sc = scoreOf(head);
+  const xm = sc.find(x => x.key === 'xmas');
+  if (xm.n > 0) return 'xmas'; // 曲名にクリスマスの言葉があれば、他の季節の言葉(「冬」など)が入っていてもクリスマス
   if (sc[0].n > 0 && sc[0].n > sc[1].n) return sc[0].key;
   // 曲名で決まらないときは、歌詞に出てくる季節の言葉が多く、はっきり差がある場合だけ採用する
   if (sc[0].n === 0 && track.lyrics) {
@@ -1495,7 +1498,14 @@ function orderedPlaylistItems() {
   const savedItems = [];
   saved.forEach((k) => { if (byKey.has(k)) { savedItems.push(byKey.get(k)); byKey.delete(k); } });
   // 並び替えた後に作ったプレイリストなど、順が決まっていないものは、いちばん上に出す
-  return [...defaults.filter(it => byKey.has(playlistItemKey(it))), ...savedItems];
+  const fresh = defaults.filter(it => byKey.has(playlistItemKey(it)));
+  // 新しく増えた春夏秋冬の仲間(クリスマス)は、冬の直後に入れる。それ以外(新しいプレイリスト)は一番上
+  const freshSeasons = fresh.filter(it => it.season);
+  const top = fresh.filter(it => !it.season);
+  const wi = savedItems.findIndex(it => it.season && it.season.key === 'winter');
+  if (wi >= 0) savedItems.splice(wi + 1, 0, ...freshSeasons);
+  else top.push(...freshSeasons);
+  return [...top, ...savedItems];
 }
 
 // プレイリスト画面を開いていないときは描画せず、開いたときにまとめて描く(★の付け外しなどのたびに全曲を調べ直さない)
