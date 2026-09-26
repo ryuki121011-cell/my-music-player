@@ -155,6 +155,41 @@
       <button id="btn-shuffle" class="ctrl-btn small" title="シャッフル"></button>
       <button id="btn-lyrics-toggle" class="ctrl-btn small" title="歌詞"></button>
       <button id="btn-repeat" class="ctrl-btn small" title="リピート"></button>
+      <button id="btn-queue" class="ctrl-btn small" title="再生待ち"></button>
+    </div>
+  </section>
+
+  <!-- ===== 再生待ち画面 ===== -->
+  <section id="view-queue" class="view">
+    <header class="topbar">
+      <button id="btn-back-queue" class="icon-btn">‹ 戻る</button>
+      <h1>再生待ち</h1>
+    </header>
+    <h2 class="queue-heading">再生中</h2>
+    <div id="queue-current"></div>
+    <h2 id="queue-title-next" class="queue-heading">次はこちら</h2>
+    <ul id="queue-list" class="track-list"></ul>
+    <p id="queue-more" class="empty-hint"></p>
+  </section>
+
+  <!-- ===== 曲情報の編集画面 ===== -->
+  <section id="view-edit-track" class="view">
+    <header class="topbar">
+      <button id="btn-edit-cancel" class="icon-btn">キャンセル</button>
+      <h1>曲情報</h1>
+      <button id="btn-edit-save" class="icon-btn year-sort-btn">保存</button>
+    </header>
+    <div class="form-body">
+      <div id="edit-file-name" class="form-note"></div>
+      <label class="form-row">タイトル<input id="edit-title" type="text"></label>
+      <label class="form-row">アーティスト<input id="edit-artist" type="text"></label>
+      <label class="form-row">アルバム<input id="edit-album" type="text"></label>
+      <label class="form-row">ジャンル<input id="edit-genre" type="text"></label>
+      <label class="form-row">年(西暦)<input id="edit-year" type="text" inputmode="numeric" maxlength="4"></label>
+      <div class="form-note">並び順用の読み(ふりがな)。あ〜わの並びは、この読みで決まります。空なら、表記のまま並びます。</div>
+      <label class="form-row">タイトルの読み<input id="edit-title-sort" type="text"></label>
+      <label class="form-row">アーティストの読み<input id="edit-artist-sort" type="text"></label>
+      <label class="form-row">アルバムの読み<input id="edit-album-sort" type="text"></label>
     </div>
   </section>
 

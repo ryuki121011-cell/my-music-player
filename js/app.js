@@ -49,6 +49,7 @@ function setupIcons() {
   set('btn-shuffle', 'shuffle', 24);
   set('btn-repeat', 'repeat', 24);
   set('btn-lyrics-toggle', 'lyrics', 24);
+  set('btn-queue', 'tabGenres', 24);
   set('mini-playpause', 'play', 28);
   set('mini-next', 'next', 28);
   // タブバー・上部ボタンも単色アイコンにする(白い画面でカラー絵文字が浮かないように)
@@ -200,6 +201,29 @@ function bindUIEvents() {
     renderPlaylistList();
   });
   document.getElementById('btn-back-playlists').addEventListener('click', () => showView('view-playlists'));
+  document.getElementById('btn-queue').addEventListener('click', openQueue);
+  document.getElementById('btn-edit-cancel').addEventListener('click', closeEditTrack);
+  document.getElementById('btn-edit-save').addEventListener('click', saveEditTrack);
+  document.getElementById('btn-back-queue').addEventListener('click', () => showView('view-nowplaying'));
+  const queueListEl = document.getElementById('queue-list');
+  queueListEl.addEventListener('click', (e) => {
+    const li = e.target.closest('.queue-row');
+    if (!li || e.target.closest('.drag-handle')) return;
+    const pos = Number(li.dataset.pos);
+    if (e.target.closest('.track-menu-btn')) { openQueueRowMenu(pos); return; }
+    const index = currentIndex + 1 + pos; // その曲から再生する(手前の曲は再生済みの扱い)
+    const track = tracks.find(t => t.id === currentQueue[index]);
+    if (track) loadAndPlay(track, index);
+  });
+  queueListEl.addEventListener('pointerdown', (e) => {
+    const handle = e.target.closest('.drag-handle');
+    const li = handle && handle.closest('.queue-row');
+    if (!li) return;
+    startRowDrag({ preventDefault: () => e.preventDefault(), currentTarget: handle, pointerId: e.pointerId, clientY: e.clientY }, li, queueListEl, (rows) => {
+      const shown = currentQueue.slice(currentIndex + 1, currentIndex + 1 + QUEUE_SHOW_MAX);
+      setUpcoming(rows.map(r => shown[Number(r.dataset.pos)]));
+    });
+  });
   document.getElementById('btn-playlist-add').addEventListener('click', openAddSongs);
   document.getElementById('btn-playlist-reorder').addEventListener('click', toggleSongEditMode);
   document.getElementById('song-sort-select').addEventListener('change', (e) => sortPlaylistSongs(e.target.value));
@@ -1378,14 +1402,17 @@ function updateFavButton() {
 }
 
 async function openTrackActionSheet(track) {
-  const options = [track.favorite ? 'お気に入りから外す' : 'お気に入りに追加', 'プレイリストに追加', '季節を設定(春夏秋冬)', '歌詞ファイルを読み込む', '歌詞をネットで再検索'];
+  const options = [track.favorite ? 'お気に入りから外す' : 'お気に入りに追加', '次に再生', '最後に再生', 'プレイリストに追加', '曲情報を編集', '季節を設定(春夏秋冬)', '歌詞ファイルを読み込む', '歌詞をネットで再検索'];
   if (typeof currentPlaylistId === 'number') options.push('このプレイリストから削除');
   options.push('ライブラリから削除');
   const idx = await showChoiceSheet(track.title, options);
   if (idx < 0) return;
   const label = options[idx];
   if (label === 'お気に入りに追加' || label === 'お気に入りから外す') toggleFavorite(track);
+  else if (label === '次に再生') enqueue(track, true);
+  else if (label === '最後に再生') enqueue(track, false);
   else if (label === 'プレイリストに追加') addTrackToPlaylistPrompt(track.id);
+  else if (label === '曲情報を編集') openEditTrack(track);
   else if (label === '季節を設定(春夏秋冬)') setTrackSeason(track);
   else if (label === '歌詞ファイルを読み込む') importLyricsForTrack(track);
   else if (label === '歌詞をネットで再検索') refetchLyrics(track);
@@ -1420,6 +1447,13 @@ async function deleteTrackFromLibrary(trackId) {
   renderTrackList(document.getElementById('search-input').value.trim());
   renderPlaylistList();
 }
+
+// ===== 自動の一覧(最近追加した曲 / 最近再生した曲 / よく聴く曲) =====
+const AUTO_LISTS = [
+  { key: 'added', label: '最近追加した曲', get: () => tracks.filter(t => t.addedAt).sort((a, b) => b.addedAt - a.addedAt).slice(0, 100) },
+  { key: 'played', label: '最近再生した曲', get: () => tracks.filter(t => t.lastPlayedAt).sort((a, b) => b.lastPlayedAt - a.lastPlayedAt).slice(0, 100) },
+  { key: 'most', label: 'よく聴く曲', get: () => tracks.filter(t => t.playCount > 0).sort((a, b) => b.playCount - a.playCount || b.lastPlayedAt - a.lastPlayedAt).slice(0, 100) },
+];
 
 // ===== 季節のプレイリスト(春夏秋冬) =====
 // 曲名・アルバム名の言葉から自動で振り分ける。手動で決めた季節(track.season)があればそちらを優先する。'none' = どれでもない
@@ -1478,12 +1512,13 @@ async function setTrackSeason(track) {
 const PLAYLIST_ORDER_KEY = 'playlistOrder';
 let playlistEditMode = false;
 
-function playlistItemKey(item) { return item.fav ? 'fav' : item.season ? 'season:' + item.season.key : 'pl:' + item.pl.id; }
+function playlistItemKey(item) { return item.fav ? 'fav' : item.auto ? 'auto:' + item.auto.key : item.season ? 'season:' + item.season.key : 'pl:' + item.pl.id; }
 
 function orderedPlaylistItems() {
   // 標準の並び: プレイリスト(作成が新しい順。旧版で並べ替えた順があればそれ) → 春夏秋冬
   const defaults = [
     { fav: true },
+    ...AUTO_LISTS.map(d => ({ auto: d })),
     ...playlists.slice().sort((a, b) => {
       const oa = a.order === undefined ? Infinity : a.order;
       const ob = b.order === undefined ? Infinity : b.order;
@@ -1501,7 +1536,11 @@ function orderedPlaylistItems() {
   const fresh = defaults.filter(it => byKey.has(playlistItemKey(it)));
   // 新しく増えた春夏秋冬の仲間(クリスマス)は、冬の直後に入れる。それ以外(新しいプレイリスト)は一番上
   const freshSeasons = fresh.filter(it => it.season);
-  const top = fresh.filter(it => !it.season);
+  const freshAutos = fresh.filter(it => it.auto);
+  const top = fresh.filter(it => !it.season && !it.auto);
+  const fi = savedItems.findIndex(it => it.fav); // 自動の一覧は、お気に入りの曲の直後に入れる
+  if (fi >= 0) savedItems.splice(fi + 1, 0, ...freshAutos);
+  else top.push(...freshAutos);
   const wi = savedItems.findIndex(it => it.season && it.season.key === 'winter');
   if (wi >= 0) savedItems.splice(wi + 1, 0, ...freshSeasons);
   else top.push(...freshSeasons);
@@ -1524,7 +1563,12 @@ function renderPlaylistList() {
     li.className = 'playlist-item';
     li.dataset.key = playlistItemKey(item);
     let list, name, countText, open;
-    if (item.fav) {
+    if (item.auto) {
+      list = item.auto.get();
+      name = item.auto.label;
+      countText = `${list.length}曲`;
+      open = () => openPlaylistDetail('auto:' + item.auto.key);
+    } else if (item.fav) {
       list = favs;
       name = 'お気に入りの曲';
       countText = `${list.length}曲`;
@@ -1679,7 +1723,11 @@ function openPlaylistDetail(playlistId) {
   const isSeason = typeof playlistId === 'string';
   let pl;
   let plTracks;
-  if (playlistId === 'fav') {
+  const autoDef = AUTO_LISTS.find(d => 'auto:' + d.key === playlistId);
+  if (autoDef) {
+    pl = { name: autoDef.label };
+    plTracks = autoDef.get(); // 新しい順・回数の多い順のまま出す
+  } else if (playlistId === 'fav') {
     pl = { name: 'お気に入りの曲' };
     plTracks = tracks.filter(t => t.favorite).sort((a, b) => sectionSort(trackSortKey(a), trackSortKey(b)));
   } else if (isSeason) {
@@ -1755,9 +1803,18 @@ function closeAddSongs() {
   openPlaylistDetail(currentPlaylistId); // 追加した曲が並んだ状態で、プレイリストに戻る
 }
 
+async function renamePlaylist(pl) {
+  const name = prompt('プレイリストの新しい名前', pl.name);
+  if (name === null || !name.trim() || name.trim() === pl.name) return;
+  pl.name = name.trim();
+  await DB.updatePlaylist(pl);
+  renderPlaylistList();
+}
+
 async function openPlaylistActionSheet(pl) {
-  const idx = await showChoiceSheet(pl.name, ['プレイリストを削除']);
-  if (idx !== 0) return;
+  const idx = await showChoiceSheet(pl.name, ['名前を変更', 'プレイリストを削除']);
+  if (idx === 0) { renamePlaylist(pl); return; }
+  if (idx !== 1) return;
   if (!confirm(`プレイリスト「${pl.name}」を削除しますか?(曲自体はライブラリに残ります)`)) return;
   deletePlaylistById(pl.id);
 }
@@ -1810,9 +1867,11 @@ function playTrackById(id, queueIds) {
   loadAndPlay(track);
 }
 
-function loadAndPlay(track) {
+let playCounted = false; // 今の再生を、再生回数に数えたか
+function loadAndPlay(track, index) {
   currentTrack = track;
-  currentIndex = currentQueue.indexOf(track.id);
+  playCounted = false;
+  currentIndex = index !== undefined ? index : currentQueue.indexOf(track.id); // 同じ曲が再生待ちに2つあっても、位置を取り違えないように、位置を指定できる
   if (currentAudioUrl) URL.revokeObjectURL(currentAudioUrl);
   currentAudioUrl = URL.createObjectURL(track.fileBlob);
   audioEl.src = currentAudioUrl;
@@ -1821,6 +1880,7 @@ function loadAndPlay(track) {
   updateMediaSession();
   showMiniPlayer();
   refreshPlayingHighlight();
+  renderQueueIfOpen();
 }
 
 // 全ての曲一覧(ライブラリ/年代/ジャンル/アーティスト/プレイリスト詳細)で再生中の曲だけ強調する
@@ -1845,7 +1905,7 @@ function playNext() {
     else { audioEl.pause(); return; }
   }
   const track = tracks.find(t => t.id === currentQueue[nextIndex]);
-  if (track) loadAndPlay(track);
+  if (track) loadAndPlay(track, nextIndex);
 }
 
 function playPrev() {
@@ -1857,7 +1917,115 @@ function playPrev() {
     else { audioEl.currentTime = 0; return; }
   }
   const track = tracks.find(t => t.id === currentQueue[prevIndex]);
-  if (track) loadAndPlay(track);
+  if (track) loadAndPlay(track, prevIndex);
+}
+
+// ===== 曲情報の編集(タイトル・アーティスト・アルバム・ジャンル・年、と並び順用の読み) =====
+const EDIT_FIELDS = [
+  ['title', 'edit-title'], ['artist', 'edit-artist'], ['album', 'edit-album'], ['genre', 'edit-genre'], ['year', 'edit-year'],
+  ['titleSort', 'edit-title-sort'], ['artistSort', 'edit-artist-sort'], ['albumSort', 'edit-album-sort'],
+];
+let editingTrack = null;
+let viewBeforeEdit = 'view-library';
+
+function openEditTrack(track) {
+  editingTrack = track;
+  const active = document.querySelector('.view.active');
+  viewBeforeEdit = active ? active.id : 'view-library';
+  EDIT_FIELDS.forEach(([key, id]) => {
+    document.getElementById(id).value = key === 'artist' && track.artist === UNKNOWN_ARTIST ? '' : (track[key] || '');
+  });
+  document.getElementById('edit-file-name').textContent = (track.fileBlob && track.fileBlob.name) || '';
+  showView('view-edit-track');
+  document.getElementById('view-edit-track').scrollTop = 0;
+}
+
+function closeEditTrack() {
+  editingTrack = null;
+  showView(viewBeforeEdit);
+}
+
+async function saveEditTrack() {
+  const track = editingTrack;
+  if (!track) return;
+  const val = (id) => document.getElementById(id).value.trim();
+  if (!val('edit-title')) { alert('タイトルを入力してください'); return; }
+  const year = val('edit-year').normalize('NFKC');
+  if (year && !/^\d{4}$/.test(year)) { alert('年は、西暦4けたの数字で入力してください(例: 2005)'); return; }
+  EDIT_FIELDS.forEach(([key, id]) => { track[key] = key === 'year' ? year : val(id); });
+  if (!track.artist) track.artist = UNKNOWN_ARTIST;
+  track.readingsScanned = true; // 読みは自分で決めたので、ファイルのタグで上書きしない
+  await DB.updateTrack(track);
+  markLibraryChanged();
+  document.querySelectorAll('ul').forEach((ul) => { if (ul._v) updateVirtualWindow(ul, true); }); // 表示中の行を新しい内容に
+  renderPlaylistList();
+  if (currentTrack && currentTrack.id === track.id) updateNowPlayingUI();
+  renderQueueIfOpen();
+  closeEditTrack();
+}
+
+// ===== 再生待ち(次に再生 / 最後に再生 / 再生待ち画面) =====
+function showToast(text) {
+  let el = document.getElementById('toast');
+  if (!el) { el = document.createElement('div'); el.id = 'toast'; el.className = 'toast'; document.body.appendChild(el); }
+  el.textContent = text;
+  el.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => el.classList.remove('show'), 1600);
+}
+
+// next=true: 今の曲の次に入れる / false: 再生待ちの最後に入れる。何も再生していなければ、その曲を再生し始める
+function enqueue(track, next) {
+  if (!currentTrack) { playTrackById(track.id, [track.id]); return; }
+  if (next) {
+    currentQueue.splice(currentIndex + 1, 0, track.id);
+    const bi = baseQueue.indexOf(currentTrack.id);
+    baseQueue.splice(bi >= 0 ? bi + 1 : baseQueue.length, 0, track.id);
+  } else {
+    currentQueue.push(track.id);
+    baseQueue.push(track.id);
+  }
+  showToast(next ? '次に再生します' : '再生待ちの最後に追加しました');
+  renderQueueIfOpen();
+}
+
+const QUEUE_SHOW_MAX = 300; // 画面に出す「次はこちら」の最大数(それ以降も、再生はされる)
+function queueRowHTML(t, pos, withHandle) {
+  return `<li class="edit-row queue-row" data-pos="${pos}"><img class="track-artwork" decoding="async" src="${getThumbUrl(t)}" alt="">` +
+    `<div class="track-meta"><div class="track-title">${esc(t.title)}</div><div class="track-artist">${esc(t.artist)}</div></div>` +
+    (withHandle ? `<button class="track-menu-btn">⋯</button><div class="drag-handle">≡</div>` : '') + `</li>`;
+}
+function renderQueue() {
+  const cur = document.getElementById('queue-current');
+  cur.innerHTML = currentTrack ? `<ul class="track-list">${queueRowHTML(currentTrack, -1, false)}</ul>` : '<p class="empty-hint">再生中の曲はありません</p>';
+  const byId = new Map(tracks.map(t => [t.id, t]));
+  const rest = currentTrack ? currentQueue.slice(currentIndex + 1) : [];
+  const shown = rest.slice(0, QUEUE_SHOW_MAX);
+  document.getElementById('queue-title-next').textContent = `次はこちら(${rest.length}曲)`;
+  document.getElementById('queue-list').innerHTML = shown.map((id, i) => byId.get(id) ? queueRowHTML(byId.get(id), i, true) : '').join('');
+  document.getElementById('queue-more').textContent = rest.length > shown.length ? `このあと ${rest.length - shown.length}曲が続きます(表示は${QUEUE_SHOW_MAX}曲まで)` : '';
+}
+function renderQueueIfOpen() {
+  if (document.getElementById('view-queue').classList.contains('active')) renderQueue();
+}
+function openQueue() { renderQueue(); showView('view-queue'); }
+
+// 再生待ちの「次はこちら」のうち画面に出していた範囲を、並べ替えたり削除したあとの並びで置き換える
+function setUpcoming(newShown) {
+  const before = currentQueue.slice(0, currentIndex + 1);
+  const shownCount = Math.min(QUEUE_SHOW_MAX, currentQueue.length - currentIndex - 1);
+  const after = currentQueue.slice(currentIndex + 1 + shownCount);
+  currentQueue = [...before, ...newShown, ...after];
+  if (!isShuffle) baseQueue = currentQueue.slice(); // シャッフル中は、元の並びは触らない
+  renderQueue();
+}
+
+async function openQueueRowMenu(pos) {
+  const idx = await showChoiceSheet('再生待ちの操作', ['再生待ちから削除']);
+  if (idx !== 0) return;
+  const shown = currentQueue.slice(currentIndex + 1, currentIndex + 1 + QUEUE_SHOW_MAX);
+  shown.splice(pos, 1);
+  setUpcoming(shown);
 }
 
 function toggleShuffle() {
@@ -1922,6 +2090,7 @@ function bindAudioEvents() {
   audioEl.addEventListener('seeked', () => highlightCurrentLyricLine());
   audioEl.addEventListener('ended', () => {
     if (repeatMode === 'one') {
+      playCounted = false;
       audioEl.currentTime = 0;
       audioEl.play().catch(() => {});
       return;
@@ -1930,6 +2099,14 @@ function bindAudioEvents() {
   });
   audioEl.addEventListener('timeupdate', () => {
     highlightCurrentLyricLine();
+    // 30秒(短い曲は半分)聴いたら、1回再生したことにする → 「最近再生した曲」「よく聴く曲」
+    if (currentTrack && !playCounted && audioEl.duration && audioEl.currentTime >= Math.min(30, audioEl.duration / 2)) {
+      playCounted = true;
+      currentTrack.playCount = (currentTrack.playCount || 0) + 1;
+      currentTrack.lastPlayedAt = Date.now();
+      DB.updateTrack(currentTrack);
+      renderPlaylistList();
+    }
     if (seeking || !audioEl.duration) return;
     document.getElementById('seek-bar').value = (audioEl.currentTime / audioEl.duration) * 1000;
     document.getElementById('np-current-time').textContent = formatTime(audioEl.currentTime);

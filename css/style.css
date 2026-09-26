@@ -378,3 +378,14 @@ html, body {
 .edit-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); height: 63px; box-sizing: border-box; }
 
 .sort-select { width: 100%; padding: 10px 12px; border: 0; border-radius: 10px; background: var(--surface2); color: var(--text); font-size: 15px; }
+
+/* 再生待ち画面・トースト */
+.queue-heading { font-size: 15px; font-weight: 700; color: var(--text-dim); margin: 14px 16px 4px; }
+.toast { position: fixed; left: 50%; bottom: 150px; transform: translateX(-50%); background: rgba(30,30,30,.92); color: #fff; padding: 10px 18px; border-radius: 20px; font-size: 14px; z-index: 50; opacity: 0; pointer-events: none; transition: opacity .2s; }
+.toast.show { opacity: 1; }
+
+/* 曲情報の編集・設定の入力欄 */
+.form-body { padding: 0 16px 24px; }
+.form-row { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-dim); padding: 8px 0; }
+.form-row input, .form-row select { font-size: 17px; padding: 10px 12px; border: 0; border-radius: 10px; background: var(--surface2); color: var(--text); width: 100%; }
+.form-note { font-size: 12px; color: var(--text-dim); padding: 10px 0 2px; word-break: break-all; }
